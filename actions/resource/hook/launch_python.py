@@ -5,7 +5,6 @@ import getpass
 import sys
 import pprint
 import logging
-import os
 
 import ftrack
 import ftrack_connect.application
@@ -59,23 +58,6 @@ class LaunchApplicationAction(object):
 
         return True
 
-    def validateArtist(self, selection):
-        '''Return true if the artist matches system user.
-        '''
-        # filter on artist attribute
-        user = os.getenv('systemuser')
-        self.logger.info('USER: {}'.format(user))
-
-        taskid = selection[0].get('entityId')
-        task = ftrack.Task(taskid)
-        artist = task.get('artist')
-        self.logger.info('ARTIST: {}'.format(artist))
-
-        if user != artist:
-            return False
-
-        return True
-
     def discover(self, event):
         '''Return discovered applications.'''
         items = []
@@ -83,9 +65,6 @@ class LaunchApplicationAction(object):
         selection = data.get('selection', [])
 
         if not self.validateSelection(selection):
-            return
-
-        if not self.validateArtist(selection):
             return
 
         applications = self.applicationStore.applications
