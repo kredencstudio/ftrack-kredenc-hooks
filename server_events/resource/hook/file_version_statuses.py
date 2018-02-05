@@ -1,60 +1,58 @@
 import logging
-import ftrack
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
-import utils
+import ftrack_api
 
 logging.basicConfig()
 logger = logging.getLogger()
 
 
 def file_version_statuses(event):
-    '''Modify the application environment.'''
+    '''Set new version status to data if version matches given types'''
 
     for entity in event['data'].get('entities', []):
 
-        # Filter non-assetversions
-        if entity.get('entityType') == 'assetversion' and entity['action'] == 'add':
-            version = ftrack.AssetVersion(id=entity.get('entityId'))
+        # Filter to new assetversions
+        if (entity['entityType'] == 'assetversion' and
+                entity['action'] == 'add'):
 
-            asset_type = version.getAsset().getType().getShort()
-
-            file_status = utils.get_status_by_name('data')
+            version = session.get('AssetVersion', entity['entityId'])
+            asset_type = version['asset']['type']['name']
+            file_status = session.query(
+                'Status where name is "{}"'.format('data')).one()
 
             # Setting task status
             try:
-                if asset_type in ['cam', 'cache', 'rig', 'scene']:
-                    version.setStatus(file_status)
+                if asset_type.lower() in ['cam', 'cache', 'rig', 'scene']:
+                    version['status'] = file_status
             except Exception as e:
-                print 'status couldnt be set: %s' % ( e)
+                print 'status couldnt be set: {}'.format(e)
             else:
-                print 'updated to "%s"' % (file_status.get('name'))
+                print 'updated to "{}"'.format(file_status['name'])
+
+        session.commit()
 
 
-def register(registry, **kw):
-    '''Register location plugin.'''
+# Register in case event will be ran within ftrack_connect
 
-    # Validate that registry is the correct ftrack.Registry. If not,
-    # assume that register is being called with another purpose or from a
-    # new or incompatible API and return without doing anything.
-    if registry is not ftrack.EVENT_HANDLERS:
-        # Exit to avoid registering this plugin again.
+def register(session, **kw):
+    '''Register plugin. Called when used as an plugin.'''
+    # Validate that session is an instance of ftrack_api.Session. If not,
+    # assume that register is being called from an old or incompatible API and
+    # return without doing anything.
+    if not isinstance(session, ftrack_api.session.Session):
         return
 
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        file_version_statuses
+    session.event_hub.subscribe(
+        'topic=ftrack.update', file_version_statuses
     )
 
+#  Run event standalone
 
-# allow the event to run independently
+
 if __name__ == '__main__':
-    logger.setLevel(logging.DEBUG)
-
-    ftrack.setup()
-
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        file_version_statuses)
-    ftrack.EVENT_HUB.wait()
+    logger.setLevel(logging.INFO)
+    session = ftrack_api.Session()
+    session.event_hub.subscribe(
+        'topic=ftrack.update', file_version_statuses
+    )
+    logger.info('Listening for events. Use Ctrl-C to abort.')
+    session.event_hub.wait()

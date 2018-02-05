@@ -1,9 +1,5 @@
 import logging
-import ftrack
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
-import utils
+import ftrack_api
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -13,33 +9,38 @@ def event_name(event):
     '''Modify the application environment.'''
 
     for entity in event['data'].get('entities', []):
+        # START of event script paylod
+
         pass
-        # do something with the event
+
+        # END of event script paylod
+        session.commit()
 
 
-def register(registry, **kw):
-    '''Register location plugin.'''
+###############################################################################
 
-    # Validate that registry is the correct ftrack.Registry. If not,
-    # assume that register is being called with another purpose or from a
-    # new or incompatible API and return without doing anything.
-    if registry is not ftrack.EVENT_HANDLERS:
-        # Exit to avoid registering this plugin again.
+# Register in case event will be ran within ftrack_connect
+
+def register(session, **kw):
+    '''Register plugin. Called when used as an plugin.'''
+    # Validate that session is an instance of ftrack_api.Session. If not,
+    # assume that register is being called from an old or incompatible API and
+    # return without doing anything.
+    if not isinstance(session, ftrack_api.session.Session):
         return
 
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        event_name
+    session.event_hub.subscribe(
+        'topic=ftrack.update', event_name
     )
 
+#  Run event standalone
 
-# allow the event to run independently
+
 if __name__ == '__main__':
-    logger.setLevel(logging.DEBUG)
-
-    ftrack.setup()
-
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        event_name)
-    ftrack.EVENT_HUB.wait()
+    logger.setLevel(logging.INFO)
+    session = ftrack_api.Session()
+    session.event_hub.subscribe(
+        'topic=ftrack.update', event_name
+    )
+    logger.info('Listening for events. Use Ctrl-C to abort.')
+    session.event_hub.wait()

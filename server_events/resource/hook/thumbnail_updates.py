@@ -1,78 +1,60 @@
 import logging
-import ftrack
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
-import utils
-from pprint import pprint
+import ftrack_api
 
 logging.basicConfig()
 logger = logging.getLogger()
 
 
 def thumbnail_update(event):
-    '''Modify the application environment.'''
+    '''Update thumbnails automatically'''
 
     for entity in event['data'].get('entities', []):
 
         # update created task thumbnail with first parent thumbnail
-        for entity in event['data'].get('entities', []):
-            if entity.get('entityType') == 'task' and entity['action'] == 'add':
-                task = None
-                try:
-                    task = ftrack.Task(id=entity.get('entityId'))
-                except:
-                    return
+        if entity['entityType'] == 'task' and entity['action'] == 'add':
 
-                parent = task.getParent()
-                if parent.get('thumbid') and not task.get('thumbid'):
-                    task.set('thumbid', value=parent.get('thumbid'))
-                    print 'Updated thumbnail on %s/%s' % (parent.getName(),
-                                                          task.getName())
+            task = session.get('TypedContext', entity['entityId'])
+            parent = task['parent']
 
-            # Update task thumbnail from published version
-            if entity['entityType'] == 'assetversion' and entity['action'] == 'encoded':
+            if parent.get('thumbnail') and not task.get('thumbnail'):
+                task['thumbnail'] = parent['thumbnail']
+                logger.info('Updated thumbnail on %s/%s' % (parent['name'],
+                                                            task['name']))
 
-                pprint(entity)
-                try:
-                    version = ftrack.AssetVersion(id=entity.get('entityId'))
-                    task = ftrack.Task(version.get('taskid'))
-                    thumbid = version.get('thumbid')
-                except:
-                    continue
+        # Update task thumbnail from published version
+        if entity['entityType'] == 'assetversion' and entity['action'] == 'encoded':
 
-                if thumbid:
-                    task.set('thumbid', value=thumbid)
+            version = session.get('AssetVersion', entity['entityId'])
+            thumbnail = version.get('thumbnail')
+            task = version['task']
 
-                    parent = task.getParent()
-                    parent.set('thumbid', value=thumbid)
+            if thumbnail:
+                task['thumbnail'] = thumbnail
+                task['parent']['thumbnail'] = thumbnail
+                logger.info(
+                    'Updating thumbnail for task and shot {}'.format(task['name']))
 
-                    print 'Updating thumbnail for task and shot %s' % (task.getName())
+        session.commit()
 
 
-def register(registry, **kw):
-    '''Register location plugin.'''
-
-    # Validate that registry is the correct ftrack.Registry. If not,
-    # assume that register is being called with another purpose or from a
-    # new or incompatible API and return without doing anything.
-    if registry is not ftrack.EVENT_HANDLERS:
-        # Exit to avoid registering this plugin again.
+def register(session, **kw):
+    '''Register plugin. Called when used as an plugin.'''
+    # Validate that session is an instance of ftrack_api.Session. If not,
+    # assume that register is being called from an old or incompatible API and
+    # return without doing anything.
+    if not isinstance(session, ftrack_api.session.Session):
         return
 
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        thumbnail_update
+    session.event_hub.subscribe(
+        'topic=ftrack.update', thumbnail_update
     )
 
 
-# allow the event to run independently
 if __name__ == '__main__':
-    logger.setLevel(logging.DEBUG)
-
-    ftrack.setup()
-
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        thumbnail_update)
-    ftrack.EVENT_HUB.wait()
+    logger.setLevel(logging.INFO)
+    session = ftrack_api.Session()
+    session.event_hub.subscribe(
+        'topic=ftrack.update', thumbnail_update
+    )
+    logger.info('Listening for events. Use Ctrl-C to abort.')
+    session.event_hub.wait()
