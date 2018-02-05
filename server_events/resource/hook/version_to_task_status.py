@@ -1,76 +1,76 @@
 import logging
-import ftrack
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
-import utils
+import ftrack_api
 
 logging.basicConfig()
 logger = logging.getLogger()
 
 
 def version_to_task_status(event):
-    '''Modify the application environment.'''
+    '''Push version status to task'''
 
     for entity in event['data'].get('entities', []):
-
         # Filter non-assetversions
-        if entity.get('entityType') == 'assetversion' and entity['action'] == 'update':
-            version = ftrack.AssetVersion(id=entity.get('entityId'))
-            version_status = version.getStatus()
+        if (entity['entityType'] == 'assetversion' and
+                'statusid' in entity['keys']):
+
+            version = session.get('AssetVersion', entity['entityId'])
+            version_status = version['status']
             task_status = version_status
-            try:
-                task = version.getTask()
-            except:
-                return
+            task = version['task']
 
+            status_to_set = None
             # Filter to versions with status change to "render complete"
-            if version_status.get('name').lower() == 'reviewed':
-                task_status = utils.get_status_by_name('change requested')
+            if version_status['name'].lower() == 'reviewed':
+                status_to_set = 'change requested'
 
-            if version_status.get('name').lower() == 'approved':
-                task_status = utils.get_status_by_name('complete')
-                if task.getType().getName() == 'Lighting':
-                    task_status = utils.get_status_by_name('to render')
+            if version_status['name'].lower() == 'approved':
+                status_to_set = 'complete'
+                if task['type']['name'] == 'Lighting':
+                    status_to_set = 'to render'
 
+            if status_to_set:
+                task_status = session.query(
+                    'Status where name is "{}"'.format(status_to_set)).one()
+            #
             # Proceed if the task status was set
             if task_status:
                 # Get path to task
-                path = task.get('name')
-                for p in task.getParents():
-                    path = p.get('name') + '/' + path
+                path = task['name']
+                for p in task['ancestors']:
+                    path = p['name'] + '/' + path
 
                 # Setting task status
                 try:
-                    task.setStatus(task_status)
+                    task['status'] = task_status
+                    session.commit()
                 except Exception as e:
-                    print '%s status couldnt be set: %s' % (path, e)
+                    logger.info(
+                        '{} status couldnt be set: {}'.format(path, e))
+                    # print '{} status couldnt be set: {}'
                 else:
-                    print '%s updated to "%s"' % (path, task_status.get('name'))
+                    logger.info('{} updated to "{}"'.format(
+                        path, task_status['name']))
+                    # print '{} updated to "{}"'
 
 
-def register(registry, **kw):
-    '''Register location plugin.'''
-
-    # Validate that registry is the correct ftrack.Registry. If not,
-    # assume that register is being called with another purpose or from a
-    # new or incompatible API and return without doing anything.
-    if registry is not ftrack.EVENT_HANDLERS:
-        # Exit to avoid registering this plugin again.
+def register(session, **kw):
+    '''Register plugin. Called when used as an plugin.'''
+    # Validate that session is an instance of ftrack_api.Session. If not,
+    # assume that register is being called from an old or incompatible API and
+    # return without doing anything.
+    if not isinstance(session, ftrack_api.session.Session):
         return
 
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        version_to_task_status
+    session.event_hub.subscribe(
+        'topic=ftrack.update', version_to_task_status
     )
 
 
 if __name__ == '__main__':
-    logger.setLevel(logging.DEBUG)
-
-    ftrack.setup()
-
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        version_to_task_status)
-    ftrack.EVENT_HUB.wait()
+    logger.setLevel(logging.INFO)
+    session = ftrack_api.Session()
+    session.event_hub.subscribe(
+        'topic=ftrack.update', version_to_task_status
+    )
+    logger.info('Listening for events. Use Ctrl-C to abort.')
+    session.event_hub.wait()

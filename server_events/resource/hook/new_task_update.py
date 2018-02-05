@@ -1,12 +1,39 @@
 import logging
-import ftrack
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
-import utils
+import operator
+import ftrack_api
 
 logging.basicConfig()
 logger = logging.getLogger()
+
+
+def get_next_task(task):
+        parent = task['parent']
+        # tasks = parent['tasks']
+        tasks = parent['children']
+
+        def sort_types(types):
+            data = {}
+            for t in types:
+                data[t] = t.get('sort')
+
+            data = sorted(data.items(), key=operator.itemgetter(1))
+            results = []
+            for item in data:
+                results.append(item[0])
+            return results
+
+        types_sorted = sort_types(session.query('Type'))
+        next_types = None
+        for t in types_sorted:
+            if t['id'] == task['type_id']:
+                next_types = types_sorted[(types_sorted.index(t) + 1):]
+
+        for nt in next_types:
+            for t in tasks:
+                if nt['id'] == t['type_id']:
+                    return t
+
+        return None
 
 
 def new_task_update(event):
@@ -14,64 +41,62 @@ def new_task_update(event):
 
     for entity in event['data'].get('entities', []):
 
-        # Filter to only tasks
-        if entity.get('entityType') == 'task' and entity['action'] == 'update':
+        if (entity['entityType'] == 'task' and
+                'statusid' in entity['keys']):
 
-            # Find task if it exists
-            task = None
-            try:
-                task = ftrack.Task(id=entity.get('entityId'))
-            except:
-                return
+            task = session.get('Task', entity['entityId'])
 
-            # Filter to tasks only
-            if task and task.get('objecttypename') == 'Task':
+            status = session.get('Status', entity['changes']['statusid']['new'])
+            state = status['state']['name']
 
-                # Setting next task to NOT STARTED, if on NOT READY
-                if task.getStatus().get('state') == 'DONE':
-                    next_task = utils.get_next_task(task)
-                    if next_task:
-                        if next_task.getStatus().get('state') == 'NOT_STARTED':
-                            if next_task.getStatus().get('name').lower() == 'not ready'.lower():
+            next_task = get_next_task(task)
 
-                                # Get path to next task
-                                path = next_task.get('name')
-                                for p in task.getParents():
-                                    path = p.get('name') + '/' + path
+            # Setting next task to NOT STARTED, if on NOT READY
+            if next_task and state == 'Done':
+                if next_task['status']['name'].lower() == 'not ready':
 
-                                # Setting next task status
-                                try:
-                                    next_task.setStatus(utils.get_status_by_name('ready'))
-                                    print '%s updated to "Ready"' % path
-                                except Exception as e:
-                                    print '%s status couldnt be set: %s' % (path, e)
-                                else:
-                                    print '%s updated to "Ready"' % path
+                    # Get path to task
+                    path = task['name']
+                    for p in task['ancestors']:
+                        path = p['name'] + '/' + path
+
+                    # Setting next task status
+                    try:
+                        status_to_set = session.query(
+                            'Status where name is "{}"'.format('Ready')).one()
+                        next_task['status'] = status_to_set
+                    except Exception as e:
+                        print '{} status couldnt be set: {}'.format(path, e)
+                    else:
+                        print '{} updated to "Ready"'.format(path)
+
+            session.commit()
 
 
-def register(registry, **kw):
-    '''Register location plugin.'''
+###############################################################################
 
-    # Validate that registry is the correct ftrack.Registry. If not,
-    # assume that register is being called with another purpose or from a
-    # new or incompatible API and return without doing anything.
-    if registry is not ftrack.EVENT_HANDLERS:
-        # Exit to avoid registering this plugin again.
+# Register in case event will be ran within ftrack_connect
+
+def register(session, **kw):
+    '''Register plugin. Called when used as an plugin.'''
+    # Validate that session is an instance of ftrack_api.Session. If not,
+    # assume that register is being called from an old or incompatible API and
+    # return without doing anything.
+    if not isinstance(session, ftrack_api.session.Session):
         return
 
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        new_task_update
+    session.event_hub.subscribe(
+        'topic=ftrack.update', new_task_update
     )
 
+#  Run event standalone
 
-# allow the event to run independently
+
 if __name__ == '__main__':
-    logger.setLevel(logging.DEBUG)
-
-    ftrack.setup()
-
-    ftrack.EVENT_HUB.subscribe(
-        'topic=ftrack.update',
-        new_task_update)
-    ftrack.EVENT_HUB.wait()
+    logger.setLevel(logging.INFO)
+    session = ftrack_api.Session()
+    session.event_hub.subscribe(
+        'topic=ftrack.update', new_task_update
+    )
+    logger.info('Listening for events. Use Ctrl-C to abort.')
+    session.event_hub.wait()
