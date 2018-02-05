@@ -325,7 +325,6 @@ class ReviewSummary(ftrack.Action):
         # If selection contains more than one item return early since
         # this action can only handle a single version.
         selection = data.get('selection', [])
-        entityType = selection[0]['entityType']
         self.logger.info('Got selection: {0}'.format(selection))
         if len(selection) != 1 or selection[0]['entityType'] != 'reviewsession':
             return

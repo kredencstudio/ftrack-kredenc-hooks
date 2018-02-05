@@ -99,8 +99,8 @@ class LaunchApplicationAction(object):
         data = event['data']
         selection = data.get('selection', [])
 
-        if not self.validateArtist(selection):
-            return
+        # if not self.validateArtist(selection):
+        #     return
 
         applicationIdentifier = (
             event['data']['applicationIdentifier']
