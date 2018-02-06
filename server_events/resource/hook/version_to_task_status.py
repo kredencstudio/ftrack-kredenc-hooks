@@ -1,8 +1,4 @@
-import logging
 import ftrack_api
-
-logging.basicConfig()
-logger = logging.getLogger()
 
 
 def version_to_task_status(event):
@@ -44,33 +40,16 @@ def version_to_task_status(event):
                     task['status'] = task_status
                     session.commit()
                 except Exception as e:
-                    logger.info(
-                        '{} status couldnt be set: {}'.format(path, e))
+                    print('{} status couldnt be set: {}'.format(path, e))
                     # print '{} status couldnt be set: {}'
                 else:
-                    logger.info('{} updated to "{}"'.format(
+                    print('{} updated to "{}"'.format(
                         path, task_status['name']))
                     # print '{} updated to "{}"'
 
 
-def register(session, **kw):
-    '''Register plugin. Called when used as an plugin.'''
-    # Validate that session is an instance of ftrack_api.Session. If not,
-    # assume that register is being called from an old or incompatible API and
-    # return without doing anything.
-    if not isinstance(session, ftrack_api.session.Session):
-        return
-
-    session.event_hub.subscribe(
-        'topic=ftrack.update', version_to_task_status
-    )
-
-
-if __name__ == '__main__':
-    logger.setLevel(logging.INFO)
-    session = ftrack_api.Session()
-    session.event_hub.subscribe(
-        'topic=ftrack.update', version_to_task_status
-    )
-    logger.info('Listening for events. Use Ctrl-C to abort.')
-    session.event_hub.wait()
+session = ftrack_api.Session()
+session.event_hub.subscribe(
+    'topic=ftrack.update', version_to_task_status
+)
+session.event_hub.wait()
