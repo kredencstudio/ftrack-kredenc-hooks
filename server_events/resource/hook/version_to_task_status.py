@@ -1,7 +1,7 @@
-import ftrack_api
+# import ftrack_api
 
 
-def version_to_task_status(event):
+def version_to_task_status(event, session):
     '''Push version status to task'''
 
     for entity in event['data'].get('entities', []):
@@ -10,19 +10,21 @@ def version_to_task_status(event):
                 'statusid' in entity['keys']):
 
             version = session.get('AssetVersion', entity['entityId'])
-            version_status = version['status']
+            version_status = session.get('Status', entity['changes']['statusid']['new'])
             task_status = version_status
             task = version['task']
+            print('version status: {}'.format(version_status['name']))
 
             status_to_set = None
             # Filter to versions with status change to "render complete"
             if version_status['name'].lower() == 'reviewed':
-                status_to_set = 'change requested'
+                status_to_set = 'Change requested'
 
             if version_status['name'].lower() == 'approved':
-                status_to_set = 'complete'
+                status_to_set = 'Complete'
                 if task['type']['name'] == 'Lighting':
-                    status_to_set = 'to render'
+                    status_to_set = 'To render'
+            print('status to set: {}'.format(status_to_set))
 
             if status_to_set:
                 task_status = session.query(
@@ -46,6 +48,7 @@ def version_to_task_status(event):
                     print('{} updated to "{}"'.format(
                         path, task_status['name']))
                     # print '{} updated to "{}"'
+
 
 
 session = ftrack_api.Session()
