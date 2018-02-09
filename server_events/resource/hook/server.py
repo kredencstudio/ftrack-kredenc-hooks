@@ -81,7 +81,7 @@ def get_next_task(task):
 
 
 def new_task_update(event):
-    '''Modify the application environment.'''
+    '''Set next task to ready when previous task is completed.'''
 
     for entity in event['data'].get('entities', []):
 
