@@ -17,21 +17,25 @@ def version_to_task_status(event):
 
             status_to_set = None
             # Filter to versions with status change to "render complete"
-            if version_status['name'].lower() == 'reviewed':
+            if version_status['name'].lower() == 'done':
+                return
+
+            elif version_status['name'].lower() == 'reviewed':
                 status_to_set = 'Change requested'
 
-            if version_status['name'].lower() == 'approved':
+            elif version_status['name'].lower() == 'approved':
                 status_to_set = 'Complete'
                 if task['type']['name'] == 'Lighting':
                     status_to_set = 'To render'
-            print('status to set: {}'.format(status_to_set))
 
             if status_to_set is not None:
+                print('finding status: {}'.format(status_to_set))
                 task_status = session.query(
                     'Status where name is "{}"'.format(status_to_set)).one()
             #
             # Proceed if the task status was set
             if task_status:
+                print('task status to set: {}'.format(status_to_set))
                 # Get path to task
                 path = task['name']
                 for p in task['ancestors']:
@@ -121,6 +125,7 @@ def file_version_statuses(event):
     '''Set new version status to data if version matches given types'''
 
     for entity in event['data'].get('entities', []):
+        print('DATA STATUS UPDATES...')
 
         # Filter to new assetversions
         if (entity['entityType'] == 'assetversion' and
